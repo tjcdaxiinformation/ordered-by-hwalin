@@ -1,0 +1,704 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Heart, 
+  ShoppingBag, 
+  User, 
+  Phone, 
+  Calendar, 
+  Flame, 
+  Sparkles, 
+  Share2, 
+  CheckCircle2, 
+  Trash2, 
+  Search, 
+  Copy, 
+  Church, 
+  Info,
+  Plus,
+  Minus,
+  Award,
+  Clock,
+  Send
+} from 'lucide-react';
+
+// 預設示範資料 (可離線持久化儲存於 LocalStorage)
+const INITIAL_ORDERS = [
+  {
+    id: '1',
+    name: '張長老',
+    phone: '0912-345-678',
+    church: '大溪教會',
+    peelQty: 3,
+    makauyQty: 2,
+    totalAmount: 850,
+    timestamp: '2026-07-26 10:30',
+    notes: '主日結束後自取'
+  },
+  {
+    id: '2',
+    name: '林執事',
+    phone: '0922-888-999',
+    church: '崇德教會',
+    peelQty: 5,
+    makauyQty: 5,
+    totalAmount: 1750,
+    timestamp: '2026-07-26 11:15',
+    notes: '配送到教會'
+  },
+  {
+    id: '3',
+    name: '陳姐妹',
+    phone: '0933-111-222',
+    church: '大溪教會',
+    peelQty: 2,
+    makauyQty: 3,
+    totalAmount: 900,
+    timestamp: '2026-07-26 14:20',
+    notes: '代家人購買'
+  },
+  {
+    id: '4',
+    name: '黃弟兄',
+    phone: '0955-666-777',
+    church: '花蓮教會',
+    peelQty: 4,
+    makauyQty: 1,
+    totalAmount: 800,
+    timestamp: '2026-07-26 15:45',
+    notes: ''
+  }
+];
+
+export default function App() {
+  // 從 LocalStorage 載入資料或使用初始示範資料
+  const [orders, setOrders] = useState(() => {
+    const saved = localStorage.getItem('chongde_church_orders');
+    return saved ? JSON.parse(saved) : INITIAL_ORDERS;
+  });
+
+  // 表單狀態
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [church, setChurch] = useState('大溪教會');
+  const [peelQty, setPeelQty] = useState(0);
+  const [makauyQty, setMakauyQty] = useState(0);
+  const [notes, setNotes] = useState('');
+
+  // UI 狀態
+  const [searchQuery, setSearchQuery] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 儲存至 LocalStorage
+  useEffect(() => {
+    localStorage.setItem('chongde_church_orders', JSON.stringify(orders));
+  }, [orders]);
+
+  // 價格常量
+  const PEEL_PRICE = 150;
+  const MAKAUY_PRICE = 200;
+
+  // 計算即時統計數據
+  const totalPeelCount = orders.reduce((sum, order) => sum + (Number(order.peelQty) || 0), 0);
+  const totalMakauyCount = orders.reduce((sum, order) => sum + (Number(order.makauyQty) || 0), 0);
+  const grandTotalJars = totalPeelCount + totalMakauyCount;
+  const grandTotalAmount = orders.reduce((sum, order) => sum + (Number(order.totalAmount) || 0), 0);
+
+  // 目前填寫中的表單小計
+  const currentTotalAmount = (peelQty * PEEL_PRICE) + (makauyQty * MAKAUY_PRICE);
+  const currentTotalJars = peelQty + makauyQty;
+
+  // 提示訊息彈窗
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 3500);
+  };
+
+  // 處理表單提交
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      showToast('⚠️ 請輸入認購人姓名！');
+      return;
+    }
+    if (peelQty === 0 && makauyQty === 0) {
+      showToast('⚠️ 請至少選擇一種辣椒的數量！');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    const now = new Date();
+    const formattedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const newOrder = {
+      id: Date.now().toString(),
+      name: name.trim(),
+      phone: phone.trim() || '未提供',
+      church: church || '大溪教會',
+      peelQty: Number(peelQty),
+      makauyQty: Number(makauyQty),
+      totalAmount: currentTotalAmount,
+      timestamp: formattedDate,
+      notes: notes.trim()
+    };
+
+    setTimeout(() => {
+      setOrders([newOrder, ...orders]);
+      // 重置表單
+      setName('');
+      setPhone('');
+      setPeelQty(0);
+      setMakauyQty(0);
+      setNotes('');
+      setIsSubmitting(false);
+      showToast('🎉 登記成功！願神親自紀念與祝福您的愛心！');
+    }, 400);
+  };
+
+  // 刪除條目
+  const handleDelete = (id) => {
+    if (window.confirm('確定要刪除此筆認購紀錄嗎？')) {
+      setOrders(orders.filter(order => order.id !== id));
+      showToast('已刪除紀錄');
+    }
+  };
+
+  // 複製統計摘要 (方便貼到 LINE 群組)
+  const handleCopySummary = () => {
+    const text = `【崇德教會購地募款義賣 認購即時統計】\n` +
+      `----------------------------\n` +
+      `🔥 剝皮辣椒 (150元/罐)：${totalPeelCount} 罐\n` +
+      `🌿 馬告辣椒 (200元/罐)：${totalMakauyCount} 罐\n` +
+      `🏆 總認購數量：${grandTotalJars} 罐\n` +
+      `💰 募款總金額：NT$ ${grandTotalAmount.toLocaleString()} 元\n` +
+      `👥 總登記人數：${orders.length} 人\n` +
+      `----------------------------\n` +
+      `⏰ 加購登記截止：7月31日止\n` +
+      `感謝各位弟兄姊妹的同心響應！願神紀念大家的愛心 ❤️`;
+
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('📋 已複製統計摘要至剪貼簿！可直接貼到 LINE 群組');
+    }).catch(() => {
+      // Fallback
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      showToast('📋 已複製統計摘要！');
+    });
+  };
+
+  // 篩選認購列表
+  const filteredOrders = orders.filter(order => 
+    order.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    order.church.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    order.notes.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-amber-50 via-orange-50 to-red-50 text-slate-800 font-sans pb-16">
+      
+      {/* 浮動提示框 */}
+      {toastMessage && (
+        <div className="fixed top-5 left-1/2 transform -translate-x-1/2 z-50 bg-stone-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center space-x-2 border border-amber-400/30 animate-bounce">
+          <Sparkles className="w-5 h-5 text-amber-400 shrink-0" />
+          <span className="text-sm md:text-base font-medium">{toastMessage}</span>
+        </div>
+      )}
+
+      {/* 頂部標頭區域 */}
+      <header className="bg-gradient-to-r from-red-800 via-red-700 to-rose-900 text-white shadow-xl relative overflow-hidden">
+        {/* 背景裝飾 */}
+        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]"></div>
+        
+        <div className="max-w-5xl mx-auto px-4 py-8 md:py-12 relative z-10 text-center">
+          {/* 主內一家 標誌 */}
+          <div className="inline-flex items-center space-x-2 bg-red-900/60 backdrop-blur border border-amber-300/40 text-amber-200 text-xs md:text-sm px-4 py-1.5 rounded-full mb-4 shadow-inner">
+            <Church className="w-4 h-4" />
+            <span>主內一家 共建神家 ｜ 真耶穌教會</span>
+          </div>
+
+          <h1 className="text-3xl md:text-5xl font-black tracking-tight text-amber-100 drop-shadow-md mb-2">
+            大溪教會訪問 崇德教會花東之旅
+          </h1>
+          <p className="text-xl md:text-3xl font-extrabold text-red-200 tracking-wide mb-4">
+            崇德教會 購地募款基金義賣
+          </p>
+
+          <p className="max-w-2xl mx-auto text-amber-100/90 text-sm md:text-base bg-red-950/40 p-3 rounded-xl border border-red-500/30">
+            「讓我們同心築起屬靈的根基，為主預備更美好的家 ❤️」
+          </p>
+
+          {/* 聖經經文卡片 */}
+          <div className="mt-6 max-w-xl mx-auto bg-amber-50/10 backdrop-blur-md rounded-2xl p-4 md:p-5 border border-amber-200/20 text-left text-xs md:text-sm text-amber-100 relative">
+            <span className="text-amber-300 font-serif text-3xl absolute top-1 left-3 opacity-40">“</span>
+            <p className="italic pl-4 pr-2 leading-relaxed">
+              看哪，弟兄和睦同居，是何等的善，何等的美！這好比那貴重的油澆在亞倫的頭上，流到鬍鬚，又流到衣襟；又好比黑門的甘露降在錫安山；因為在那裡有耶和華所命定的福，就是永遠的生命。
+            </p>
+            <div className="text-right font-semibold text-amber-300 mt-2">— 詩篇 133 篇 1-3 節</div>
+          </div>
+        </div>
+      </header>
+
+      {/* 主要內容容器 */}
+      <main className="max-w-5xl mx-auto px-4 -mt-6 relative z-20 space-y-8">
+
+        {/* 🌟 核心最顯眼位置：巨型統計看板 (巨型大字) */}
+        <section className="bg-white rounded-3xl shadow-2xl p-6 md:p-8 border-4 border-amber-400 relative overflow-hidden">
+          <div className="absolute top-0 right-0 bg-amber-400 text-red-950 text-xs font-black px-4 py-1.5 rounded-bl-2xl uppercase tracking-wider flex items-center gap-1 shadow-sm">
+            <Sparkles className="w-4 h-4" /> 即時總量統計
+          </div>
+
+          <div className="text-center mb-6">
+            <span className="text-xs md:text-sm font-bold text-red-700 bg-red-100 px-3 py-1 rounded-full uppercase tracking-widest inline-block mb-1">
+              建堂義賣 認購累計
+            </span>
+            <h2 className="text-2xl md:text-3xl font-black text-slate-800">全會總認購統計</h2>
+          </div>
+
+          {/* 雙主打大數字 display */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6">
+            
+            {/* 總認購罐數 (最超大字) */}
+            <div className="bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-2xl p-6 text-center shadow-lg transform hover:-translate-y-1 transition duration-200 relative overflow-hidden flex flex-col justify-center items-center">
+              <div className="absolute -right-4 -bottom-4 opacity-15 text-white">
+                <ShoppingBag className="w-32 h-32" />
+              </div>
+              <p className="text-amber-200 font-bold text-base md:text-lg tracking-wider mb-1">
+                【 認購總數量 】
+              </p>
+              <div className="my-1 flex items-baseline justify-center gap-2">
+                <span className="text-6xl sm:text-7xl md:text-8xl font-black tracking-tight drop-shadow-md text-amber-300">
+                  {grandTotalJars}
+                </span>
+                <span className="text-xl md:text-2xl font-bold text-amber-100">罐</span>
+              </div>
+              <p className="text-xs md:text-sm text-red-100/90 mt-1 font-medium">
+                感謝共有 <span className="font-bold text-white underline">{orders.length}</span> 位弟兄姊妹響應
+              </p>
+            </div>
+
+            {/* 總募款金額 */}
+            <div className="bg-gradient-to-br from-amber-500 to-amber-600 text-white rounded-2xl p-6 text-center shadow-lg transform hover:-translate-y-1 transition duration-200 relative overflow-hidden flex flex-col justify-center items-center">
+              <div className="absolute -right-4 -bottom-4 opacity-15 text-white">
+                <Award className="w-32 h-32" />
+              </div>
+              <p className="text-amber-100 font-bold text-base md:text-lg tracking-wider mb-1">
+                【 義賣募款總金額 】
+              </p>
+              <div className="my-1 flex items-baseline justify-center gap-1">
+                <span className="text-xl md:text-3xl font-black text-amber-200">NT$</span>
+                <span className="text-5xl sm:text-6xl md:text-7xl font-black tracking-tight drop-shadow-md">
+                  {grandTotalAmount.toLocaleString()}
+                </span>
+              </div>
+              <p className="text-xs md:text-sm text-amber-100 mt-1 font-medium">
+                所得款項全數支持崇德教會購地基金 ❤️
+              </p>
+            </div>
+
+          </div>
+
+          {/* 兩款產品個別統計次數字 */}
+          <div className="grid grid-cols-2 gap-3 md:gap-4 bg-orange-50/80 p-4 rounded-xl border border-orange-200/60">
+            <div className="bg-white p-3 md:p-4 rounded-xl border border-red-100 text-center shadow-sm">
+              <div className="flex items-center justify-center space-x-1.5 text-red-700 font-bold text-xs md:text-sm mb-1">
+                <Flame className="w-4 h-4 text-red-500" />
+                <span>剝皮辣椒總數</span>
+              </div>
+              <div className="text-2xl md:text-4xl font-extrabold text-red-600">
+                {totalPeelCount} <span className="text-xs md:text-sm font-normal text-slate-500">罐</span>
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">NT$ 150/罐</div>
+            </div>
+
+            <div className="bg-white p-3 md:p-4 rounded-xl border border-amber-100 text-center shadow-sm">
+              <div className="flex items-center justify-center space-x-1.5 text-amber-800 font-bold text-xs md:text-sm mb-1">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <span>馬告辣椒總數</span>
+              </div>
+              <div className="text-2xl md:text-4xl font-extrabold text-amber-700">
+                {totalMakauyCount} <span className="text-xs md:text-sm font-normal text-slate-500">罐</span>
+              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">NT$ 200/罐</div>
+            </div>
+          </div>
+
+          {/* 截止提醒與動作 */}
+          <div className="mt-5 flex flex-col md:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs md:text-sm text-slate-600">
+            <div className="flex items-center space-x-2 text-red-700 font-semibold bg-red-50 px-3 py-1.5 rounded-lg border border-red-200/50">
+              <Clock className="w-4 h-4 shrink-0 animate-pulse" />
+              <span>重要提醒：加購數量將於 <b>7/31 截止登記</b>，新鮮配送至教會！</span>
+            </div>
+            
+            <button
+              onClick={handleCopySummary}
+              className="w-full md:w-auto flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2 rounded-xl transition duration-200 text-xs shadow-md"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>複製 LINE 統計摘要</span>
+            </button>
+          </div>
+        </section>
+
+
+        {/* 下方網頁主區塊：左邊/上邊 認購表單； 右邊/下邊 認購名單 */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          
+          {/* ==================== 左側：認購登記表單 ==================== */}
+          <div className="lg:col-span-5 space-y-6">
+            
+            <div className="bg-white rounded-3xl shadow-xl p-6 border border-amber-200/60 relative">
+              <div className="flex items-center space-x-3 pb-4 mb-5 border-b border-slate-100">
+                <div className="p-2.5 bg-red-100 text-red-700 rounded-2xl">
+                  <ShoppingBag className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-800">花蓮手工辣椒認購</h3>
+                  <p className="text-xs text-slate-500">請填寫您的認購數量與資料</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-5">
+                
+                {/* 商品 1：剝皮辣椒 */}
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-red-50 to-orange-50 border border-red-200/80 space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="inline-block bg-red-600 text-white text-[10px] px-2 py-0.5 rounded font-bold mb-1">
+                        經典人氣
+                      </span>
+                      <h4 className="font-extrabold text-slate-800 text-base md:text-lg">剝皮辣椒</h4>
+                      <p className="text-xs text-slate-500">花蓮在地食材・甘甜微辣・甘醇順口</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs text-slate-400">每罐</span>
+                      <div className="text-xl font-black text-red-600">NT$ 150</div>
+                    </div>
+                  </div>
+
+                  {/* 數量選擇器 */}
+                  <div className="flex items-center justify-between pt-2 border-t border-red-200/50">
+                    <span className="text-xs font-bold text-slate-700">購買數量：</span>
+                    <div className="flex items-center space-x-3">
+                      <button
+                        type="button"
+                        onClick={() => setPeelQty(Math.max(0, peelQty - 1))}
+                        className="w-9 h-9 rounded-xl bg-white border border-slate-300 flex items-center justify-center text-slate-700 hover:bg-slate-100 active:scale-95 transition font-bold shadow-sm"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <input
+                        type="number"
+                        min="0"
+                        value={peelQty}
+                        onChange={(e) => setPeelQty(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-16 text-center font-black text-xl bg-white border border-slate-300 rounded-xl py-1 focus:ring-2 focus:ring-red-500 outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPeelQty(peelQty + 1)}
+                        className="w-9 h-9 rounded-xl bg-red-600 text-white flex items-center justify-center hover:bg-red-700 active:scale-95 transition font-bold shadow-sm"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 商品 2：馬告辣椒 */}
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200/80 space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="inline-block bg-amber-600 text-white text-[10px] px-2 py-0.5 rounded font-bold mb-1">
+                        原鄉風味
+                      </span>
+                      <h4 className="font-extrabold text-slate-800 text-base md:text-lg">馬告辣椒</h4>
+                      <p className="text-xs text-slate-500">添加山胡椒馬告・特有山林檸檬香氣</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs text-slate-400">每罐</span>
+                      <div className="text-xl font-black text-amber-700">NT$ 200</div>
+                    </div>
+                  </div>
+
+                  {/* 數量選擇器 */}
+                  <div className="flex items-center justify-between pt-2 border-t border-amber-200/50">
+                    <span className="text-xs font-bold text-slate-700">購買數量：</span>
+                    <div className="flex items-center space-x-3">
+                      <button
+                        type="button"
+                        onClick={() => setMakauyQty(Math.max(0, makauyQty - 1))}
+                        className="w-9 h-9 rounded-xl bg-white border border-slate-300 flex items-center justify-center text-slate-700 hover:bg-slate-100 active:scale-95 transition font-bold shadow-sm"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <input
+                        type="number"
+                        min="0"
+                        value={makauyQty}
+                        onChange={(e) => setMakauyQty(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-16 text-center font-black text-xl bg-white border border-slate-300 rounded-xl py-1 focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setMakauyQty(makauyQty + 1)}
+                        className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center hover:bg-amber-700 active:scale-95 transition font-bold shadow-sm"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 個人基本資料 */}
+                <div className="space-y-3 pt-2">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      認購人姓名 <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <User className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      <input
+                        type="text"
+                        required
+                        placeholder="請輸入姓名 (例如：陳大衛)"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-red-500 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        聯絡電話 (可選)
+                      </label>
+                      <div className="relative">
+                        <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                        <input
+                          type="tel"
+                          placeholder="0912-345678"
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-red-500 outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        所屬教會/團契
+                      </label>
+                      <select
+                        value={church}
+                        onChange={(e) => setChurch(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-red-500 outline-none font-medium"
+                      >
+                        <option value="大溪教會">大溪教會</option>
+                        <option value="崇德教會">崇德教會</option>
+                        <option value="花蓮教會">花蓮教會</option>
+                        <option value="主內主內弟兄姊妹">其他教會/主內肢體</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      備註說明 (現貨取貨或特別需求)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="例：已於現場領取現貨 1 罐"
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-red-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* 即時認購試算卡 */}
+                <div className="bg-amber-100/70 border border-amber-300 rounded-2xl p-4 flex justify-between items-center">
+                  <div>
+                    <span className="text-xs text-amber-900 font-bold">本次認購小計：</span>
+                    <div className="text-xs text-amber-800">
+                      剝皮 {peelQty} 罐 + 馬告 {makauyQty} 罐 = 共 <b>{currentTotalJars}</b> 罐
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-2xl font-black text-red-700">
+                      NT$ {currentTotalAmount.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 提交按鈕 */}
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full py-3.5 bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-700 hover:to-rose-800 text-white font-extrabold rounded-2xl shadow-lg hover:shadow-xl transition duration-200 flex items-center justify-center space-x-2 text-base active:scale-98"
+                >
+                  <Send className="w-5 h-5" />
+                  <span>{isSubmitting ? '登記處理中...' : '確認送出認購登記'}</span>
+                </button>
+
+              </form>
+
+            </div>
+
+            {/* 品質承諾卡片 */}
+            <div className="bg-gradient-to-r from-red-900 to-amber-900 text-white p-5 rounded-2xl shadow-lg border border-amber-300/30">
+              <div className="flex items-center space-x-2 text-amber-300 font-bold mb-2">
+                <Heart className="w-5 h-5 fill-amber-300" />
+                <span>天然美味・傳遞愛心・支持神家</span>
+              </div>
+              <p className="text-xs text-amber-100/90 leading-relaxed">
+                嚴選花蓮在地食材，手工製作，無添加人工防腐劑。每一罐辣椒都是弟兄姊妹的愛心奉獻，願神親自紀念您的付出！
+              </p>
+            </div>
+
+          </div>
+
+          {/* ==================== 右側：即時公開認購名單與統計 ==================== */}
+          <div className="lg:col-span-7 space-y-4">
+            
+            <div className="bg-white rounded-3xl shadow-xl p-6 border border-slate-200/80">
+              
+              {/* 名單標頭與搜尋列 */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-100">
+                <div>
+                  <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                    <span>認購登記名單</span>
+                    <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold">
+                      即時連線 ({filteredOrders.length} 筆)
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500">隨點隨統計，透明公開登記數據</p>
+                </div>
+
+                {/* 搜尋輸入框 */}
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="搜尋姓名或教會..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 pr-3 py-1.5 bg-slate-100 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-red-500 outline-none w-full sm:w-48"
+                  />
+                </div>
+              </div>
+
+              {/* 認購名單列表 */}
+              {filteredOrders.length === 0 ? (
+                <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  <Info className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm text-slate-500 font-medium">尚無符合的認購資料</p>
+                  <p className="text-xs text-slate-400 mt-1">成為第一位認購的弟兄姊妹吧！</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
+                  {filteredOrders.map((order) => {
+                    const itemTotalJars = order.peelQty + order.makauyQty;
+                    return (
+                      <div
+                        key={order.id}
+                        className="bg-slate-50 hover:bg-orange-50/50 rounded-2xl p-4 border border-slate-200/80 hover:border-orange-200 transition duration-150 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        {/* 左側：個人資訊 */}
+                        <div className="space-y-1">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-extrabold text-slate-800 text-base">
+                              {order.name}
+                            </span>
+                            <span className="text-[11px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md font-semibold">
+                              {order.church}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {order.timestamp}
+                            </span>
+                          </div>
+
+                          {/* 備註 */}
+                          {order.notes && (
+                            <div className="text-xs text-amber-800 bg-amber-50 inline-block px-2 py-0.5 rounded border border-amber-200/50">
+                              💬 {order.notes}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 右側：認購詳細項目與金額 */}
+                        <div className="flex items-center justify-between sm:justify-end space-x-4 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-200">
+                          
+                          {/* 購買標籤 */}
+                          <div className="flex items-center space-x-2 text-xs">
+                            {order.peelQty > 0 && (
+                              <span className="bg-red-100 text-red-800 px-2 py-1 rounded-lg font-extrabold">
+                                剝皮 {order.peelQty} 罐
+                              </span>
+                            )}
+                            {order.makauyQty > 0 && (
+                              <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded-lg font-extrabold">
+                                馬告 {order.makauyQty} 罐
+                              </span>
+                            )}
+                          </div>
+
+                          {/* 總額與操作 */}
+                          <div className="text-right flex items-center space-x-3">
+                            <div>
+                              <div className="text-xs text-slate-400">共 {itemTotalJars} 罐</div>
+                              <div className="text-base font-black text-red-700">
+                                NT$ {order.totalAmount.toLocaleString()}
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => handleDelete(order.id)}
+                              title="刪除紀錄"
+                              className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* 底部功能與說明 */}
+              <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                <span>網頁會自動保存登記進度</span>
+                <button
+                  onClick={handleCopySummary}
+                  className="text-red-600 hover:text-red-700 font-bold flex items-center space-x-1"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>複製名單與統計</span>
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </main>
+
+      {/* 頁尾 */}
+      <footer className="max-w-5xl mx-auto text-center mt-12 px-4 text-xs text-slate-400">
+        <p>真耶穌教會 崇德教會建堂義賣認購系統 ｜ 願主賜福與您</p>
+      </footer>
+
+    </div>
+  );
+}
+
