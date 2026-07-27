@@ -9,11 +9,32 @@
   <!-- React 18 & ReactDOM 18 CDN -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <!-- Babel Standalone (瀏覽器即時編譯 JSX) -->
+  <!-- Babel Standalone -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
   </style>
+
+  <!-- Firebase 11 ES Module 載入 -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+    import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+    import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+    window.FirebaseSDK = {
+      initializeApp,
+      getAuth,
+      signInWithCustomToken,
+      signInAnonymously,
+      onAuthStateChanged,
+      getFirestore,
+      collection,
+      addDoc,
+      deleteDoc,
+      doc,
+      onSnapshot
+    };
+  </script>
 </head>
 <body class="bg-amber-50">
   <div id="root"></div>
@@ -52,38 +73,105 @@
     const SendIcon = ({ className = "w-4 h-4" }) => (
       <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
     );
+    const CloudIcon = ({ className = "w-4 h-4" }) => (
+      <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 15a4 4 0 004 4h9a5 5 0 001-9.9M13 5a5 5 0 00-4.9 4.1 4 4 0 00-5.1 5.9"/></svg>
+    );
 
-    // 預設資料為空陣列
-    const INITIAL_ORDERS = [];
-
-    // 快取 key 版本號更新為 v3
-    const STORAGE_KEY = 'chongde_church_orders_v3';
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'chongde-church-order-app';
 
     function App() {
-      const [orders, setOrders] = useState(() => {
-        try {
-          const saved = localStorage.getItem(STORAGE_KEY);
-          return saved ? JSON.parse(saved) : INITIAL_ORDERS;
-        } catch (e) {
-          return INITIAL_ORDERS;
-        }
-      });
+      const [orders, setOrders] = useState([]);
+      const [user, setUser] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [isSubmitting, setIsSubmitting] = useState(false);
 
+      // 表單狀態
       const [name, setName] = useState('');
       const [peelQty, setPeelQty] = useState(0);
       const [makauyQty, setMakauyQty] = useState(0);
       const [searchQuery, setSearchQuery] = useState('');
       const [toastMessage, setToastMessage] = useState('');
 
-      useEffect(() => {
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
-        } catch (e) {}
-      }, [orders]);
+      // 刪除確認 Modal 狀態
+      const [deleteModalTarget, setDeleteModalTarget] = useState(null);
 
       const PEEL_PRICE = 150;
       const MAKAUY_PRICE = 200;
 
+      // 1. 初始化 Firebase 與 身份驗證
+      useEffect(() => {
+        let unsubscribeAuth = () => {};
+
+        const initFirebase = async () => {
+          if (typeof __firebase_config !== 'undefined' && window.FirebaseSDK) {
+            try {
+              const { initializeApp, getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } = window.FirebaseSDK;
+              const config = JSON.parse(__firebase_config);
+              const app = initializeApp(config);
+              const auth = getAuth(app);
+
+              if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await signInWithCustomToken(auth, __initial_auth_token);
+              } else {
+                await signInAnonymously(auth);
+              }
+
+              unsubscribeAuth = onAuthStateChanged(auth, (u) => {
+                setUser(u);
+              });
+            } catch (err) {
+              console.error("Firebase auth error:", err);
+              setLoading(false);
+            }
+          } else {
+            // 本地快取備援 (若無 Firebase 環境時)
+            try {
+              const localData = localStorage.getItem('chongde_orders_backup');
+              if (localData) setOrders(JSON.parse(localData));
+            } catch (e) {}
+            setLoading(false);
+          }
+        };
+
+        initFirebase();
+        return () => unsubscribeAuth();
+      }, []);
+
+      // 2. 訂閱 Firestore 實時資料庫（隨時保持最新同步）
+      useEffect(() => {
+        if (!user || typeof __firebase_config === 'undefined' || !window.FirebaseSDK) return;
+
+        const { getFirestore, collection, onSnapshot, getAuth } = window.FirebaseSDK;
+        const auth = getAuth();
+        const db = getFirestore();
+        
+        // 使用嚴格規範路徑: /artifacts/{appId}/public/data/orders
+        const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
+
+        const unsubscribe = onSnapshot(
+          ordersCol,
+          (snapshot) => {
+            const fetchedList = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }));
+
+            // 依時間由新到舊排序 (在 JS 記憶體中排序)
+            fetchedList.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            setOrders(fetchedList);
+            setLoading(false);
+          },
+          (error) => {
+            console.error("Firestore onSnapshot error:", error);
+            showToast("雲端同步發生錯誤");
+            setLoading(false);
+          }
+        );
+
+        return () => unsubscribe();
+      }, [user]);
+
+      // 計算統計
       const totalPeelCount = orders.reduce((sum, o) => sum + (Number(o.peelQty) || 0), 0);
       const totalMakauyCount = orders.reduce((sum, o) => sum + (Number(o.makauyQty) || 0), 0);
       const grandTotalJars = totalPeelCount + totalMakauyCount;
@@ -97,42 +185,75 @@
         setTimeout(() => setToastMessage(''), 3500);
       };
 
-      const handleSubmit = (e) => {
+      // 提交新訂單至雲端
+      const handleSubmit = async (e) => {
         e.preventDefault();
         if (!name.trim()) return showToast('⚠️ 請輸入認購人姓名！');
         if (peelQty === 0 && makauyQty === 0) return showToast('⚠️ 請至少選擇一種辣椒的數量！');
 
+        setIsSubmitting(true);
+
         const now = new Date();
         const formattedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-        const newOrder = {
-          id: Date.now().toString(),
+        const newOrderData = {
           name: name.trim(),
           peelQty: Number(peelQty),
           makauyQty: Number(makauyQty),
           totalAmount: currentTotalAmount,
           timestamp: formattedDate,
-          notes: '到貨教會付款取件'
+          createdAt: Date.now(),
+          notes: '到貨教會取件',
+          uid: user ? user.uid : 'anon'
         };
 
-        setOrders([newOrder, ...orders]);
+        if (user && window.FirebaseSDK) {
+          try {
+            const { getFirestore, collection, addDoc } = window.FirebaseSDK;
+            const db = getFirestore();
+            const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
+            await addDoc(ordersCol, newOrderData);
+            showToast('🎉 登記已同步上傳雲端！感謝您的愛心！');
+          } catch (err) {
+            console.error("Error adding doc:", err);
+            showToast('⚠️ 上傳失敗，請重試');
+          }
+        } else {
+          // 本地備援
+          const fallbackList = [{ id: Date.now().toString(), ...newOrderData }, ...orders];
+          setOrders(fallbackList);
+          try { localStorage.setItem('chongde_orders_backup', JSON.stringify(fallbackList)); } catch (e) {}
+          showToast('🎉 登記成功！');
+        }
+
         setName('');
         setPeelQty(0);
         setMakauyQty(0);
-        showToast('🎉 登記成功！願神親自紀念與祝福您的愛心！');
+        setIsSubmitting(false);
       };
 
-      const handleDelete = (id) => {
-        if (window.confirm('確定要刪除此筆認購紀錄嗎？')) {
-          setOrders(orders.filter(o => o.id !== id));
+      // 執行刪除
+      const confirmDelete = async () => {
+        if (!deleteModalTarget) return;
+        const targetId = deleteModalTarget.id;
+        setDeleteModalTarget(null);
+
+        if (user && window.FirebaseSDK) {
+          try {
+            const { getFirestore, doc, deleteDoc } = window.FirebaseSDK;
+            const db = getFirestore();
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'orders', targetId);
+            await deleteDoc(docRef);
+            showToast('已從雲端刪除該筆紀錄');
+          } catch (err) {
+            console.error("Error deleting doc:", err);
+            showToast('刪除失敗');
+          }
+        } else {
+          const updated = orders.filter(o => o.id !== targetId);
+          setOrders(updated);
+          try { localStorage.setItem('chongde_orders_backup', JSON.stringify(updated)); } catch (e) {}
           showToast('已刪除紀錄');
-        }
-      };
-
-      const handleClearAll = () => {
-        if (window.confirm('確定要清空全部的認購紀錄嗎？（此動作不可復原）')) {
-          setOrders([]);
-          showToast('已全部清空');
         }
       };
 
@@ -145,14 +266,14 @@
           `💰 募款總金額：NT$ ${grandTotalAmount.toLocaleString()} 元\n` +
           `👥 總登記人數：${orders.length} 人\n` +
           `----------------------------\n` +
-          `🚚 配送與取件：到貨教會付款取件\n` +
+          `🚚 取件方式：到貨教會取件\n` +
           `⏰ 加購登記截止：7月31日止\n` +
           `感謝各位弟兄姊妹的同心響應！願神紀念大家的愛心 ❤️`;
 
         if (navigator.clipboard) {
           navigator.clipboard.writeText(text).then(() => showToast('📋 已複製統計摘要至剪貼簿！'));
         } else {
-          showToast('📋 已產生摘要');
+          showToast('📋 已產生統計摘要');
         }
       };
 
@@ -163,6 +284,7 @@
       return (
         <div className="min-h-screen bg-gradient-to-b from-amber-50 via-orange-50 to-red-50 text-slate-800 font-sans pb-16">
           
+          {/* Toast 提示條 */}
           {toastMessage && (
             <div className="fixed top-5 left-1/2 transform -translate-x-1/2 z-50 bg-stone-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center space-x-2 border border-amber-400/30">
               <SparklesIcon className="w-5 h-5 text-amber-400 shrink-0" />
@@ -170,12 +292,47 @@
             </div>
           )}
 
-          {/* 標頭頁首 */}
+          {/* 刪除確認 Modal */}
+          {deleteModalTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+              <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-red-100 text-center space-y-4">
+                <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+                  <Trash2Icon className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-slate-800 text-lg">確定要刪除此筆紀錄？</h4>
+                  <p className="text-xs text-slate-500 mt-1">
+                    認購人：<span className="font-bold text-slate-700">{deleteModalTarget.name}</span>
+                  </p>
+                </div>
+                <div className="flex space-x-3 pt-2">
+                  <button
+                    onClick={() => setDeleteModalTarget(null)}
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-sm"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={confirmDelete}
+                    className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-sm"
+                  >
+                    確認刪除
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 頁首 Header */}
           <header className="bg-gradient-to-r from-red-800 via-red-700 to-rose-900 text-white shadow-xl relative overflow-hidden">
             <div className="max-w-5xl mx-auto px-4 py-8 md:py-12 relative z-10 text-center">
+              
               <div className="inline-flex items-center space-x-2 bg-red-900/60 backdrop-blur border border-amber-300/40 text-amber-200 text-xs md:text-sm px-4 py-1.5 rounded-full mb-4">
                 <ChurchIcon className="w-4 h-4" />
                 <span>主內一家 共建神家 ｜ 真耶穌教會</span>
+                <span className="bg-emerald-500/20 text-emerald-300 text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-400/30">
+                  <CloudIcon className="w-3 h-3" /> 雲端實時同步中
+                </span>
               </div>
 
               <h1 className="text-2xl md:text-5xl font-black text-amber-100 mb-2">
@@ -196,7 +353,7 @@
 
           <main className="max-w-5xl mx-auto px-4 -mt-6 relative z-20 space-y-8">
 
-            {/* 🌟 巨型統計看板 */}
+            {/* 🌟 巨型統計看板 (大字顯眼) */}
             <section className="bg-white rounded-3xl shadow-2xl p-6 md:p-8 border-4 border-amber-400 relative overflow-hidden">
               <div className="text-center mb-6">
                 <span className="text-xs md:text-sm font-bold text-red-700 bg-red-100 px-3 py-1 rounded-full inline-block mb-1">
@@ -212,7 +369,7 @@
                   <p className="text-amber-200 font-bold text-base md:text-lg mb-1">【 認購總數量 】</p>
                   <div className="my-1 flex items-baseline justify-center gap-2">
                     <span className="text-6xl sm:text-7xl md:text-8xl font-black text-amber-300 drop-shadow">
-                      {grandTotalJars}
+                      {loading ? '...' : grandTotalJars}
                     </span>
                     <span className="text-2xl font-bold text-amber-100">罐</span>
                   </div>
@@ -227,7 +384,7 @@
                   <div className="my-1 flex items-baseline justify-center gap-1">
                     <span className="text-xl md:text-3xl font-black text-amber-200">NT$</span>
                     <span className="text-5xl sm:text-6xl md:text-7xl font-black drop-shadow">
-                      {grandTotalAmount.toLocaleString()}
+                      {loading ? '...' : grandTotalAmount.toLocaleString()}
                     </span>
                   </div>
                   <p className="text-xs md:text-sm text-amber-100 mt-1">
@@ -277,7 +434,7 @@
               </div>
             </section>
 
-            {/* 下方表單與清單 */}
+            {/* 表單與即時名單 */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
               
               {/* 精簡表單 */}
@@ -289,7 +446,7 @@
                     </div>
                     <div>
                       <h3 className="text-xl font-black text-slate-800">花蓮手工辣椒認購</h3>
-                      <p className="text-xs text-slate-500">請填寫認購人姓名與數量</p>
+                      <p className="text-xs text-slate-500">填寫姓名與數量，自動同步至雲端</p>
                     </div>
                   </div>
 
@@ -312,7 +469,7 @@
                           <button
                             type="button"
                             onClick={() => setPeelQty(Math.max(0, peelQty - 1))}
-                            className="w-8 h-8 rounded-lg bg-white border flex items-center justify-center font-bold"
+                            className="w-8 h-8 rounded-lg bg-white border flex items-center justify-center font-bold active:scale-95 transition"
                           >
                             <MinusIcon className="w-4 h-4" />
                           </button>
@@ -326,7 +483,7 @@
                           <button
                             type="button"
                             onClick={() => setPeelQty(peelQty + 1)}
-                            className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center font-bold"
+                            className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center font-bold active:scale-95 transition"
                           >
                             <PlusIcon className="w-4 h-4" />
                           </button>
@@ -352,7 +509,7 @@
                           <button
                             type="button"
                             onClick={() => setMakauyQty(Math.max(0, makauyQty - 1))}
-                            className="w-8 h-8 rounded-lg bg-white border flex items-center justify-center font-bold"
+                            className="w-8 h-8 rounded-lg bg-white border flex items-center justify-center font-bold active:scale-95 transition"
                           >
                             <MinusIcon className="w-4 h-4" />
                           </button>
@@ -366,7 +523,7 @@
                           <button
                             type="button"
                             onClick={() => setMakauyQty(makauyQty + 1)}
-                            className="w-8 h-8 rounded-lg bg-amber-600 text-white flex items-center justify-center font-bold"
+                            className="w-8 h-8 rounded-lg bg-amber-600 text-white flex items-center justify-center font-bold active:scale-95 transition"
                           >
                             <PlusIcon className="w-4 h-4" />
                           </button>
@@ -380,10 +537,10 @@
                       <input
                         type="text"
                         required
-                        placeholder="請輸入姓名（例如：王鴻志）"
+                        placeholder="請輸入姓名（例：王鴻志）"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 border rounded-xl text-sm outline-none focus:bg-white"
+                        className="w-full px-3 py-2 bg-slate-50 border rounded-xl text-sm outline-none focus:bg-white focus:ring-2 focus:ring-red-500"
                       />
                     </div>
 
@@ -400,47 +557,43 @@
 
                     <button
                       type="submit"
-                      className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-extrabold rounded-xl shadow-md transition flex items-center justify-center space-x-2 text-base"
+                      disabled={isSubmitting}
+                      className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-extrabold rounded-xl shadow-md transition flex items-center justify-center space-x-2 text-base active:scale-98"
                     >
                       <SendIcon className="w-5 h-5" />
-                      <span>確認送出認購登記</span>
+                      <span>{isSubmitting ? '儲存至雲端中...' : '確認送出認購登記'}</span>
                     </button>
                   </form>
                 </div>
               </div>
 
-              {/* 右側名單 */}
+              {/* 右側公開雲端名單 */}
               <div className="lg:col-span-7 space-y-4">
                 <div className="bg-white rounded-3xl shadow-xl p-6 border border-slate-200">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-3 border-b">
-                    <h3 className="text-lg font-black text-slate-800">
-                      認購登記名單 ({filteredOrders.length} 筆)
+                    <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                      <span>認購登記名單 ({filteredOrders.length} 筆)</span>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                        雲端實時
+                      </span>
                     </h3>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="text"
-                        placeholder="搜尋姓名..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="px-3 py-1 bg-slate-100 border rounded-lg text-xs outline-none"
-                      />
-                      {orders.length > 0 && (
-                        <button
-                          onClick={handleClearAll}
-                          className="text-xs text-red-500 hover:text-red-700 font-bold underline px-1"
-                        >
-                          全部清空
-                        </button>
-                      )}
-                    </div>
+                    <input
+                      type="text"
+                      placeholder="搜尋姓名..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="px-3 py-1 bg-slate-100 border rounded-lg text-xs outline-none"
+                    />
                   </div>
 
-                  <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                    {filteredOrders.length === 0 ? (
-                      <div className="text-center py-12 text-slate-400 text-xs">尚無登記資料</div>
-                    ) : (
-                      filteredOrders.map(o => (
-                        <div key={o.id} className="bg-slate-50 p-3 rounded-xl border flex justify-between items-center text-xs">
+                  {loading ? (
+                    <div className="text-center py-12 text-slate-400 text-xs">載入雲端資料中...</div>
+                  ) : filteredOrders.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400 text-xs">尚無登記資料</div>
+                  ) : (
+                    <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                      {filteredOrders.map(o => (
+                        <div key={o.id} className="bg-slate-50 p-3 rounded-xl border flex justify-between items-center text-xs hover:bg-orange-50/40 transition">
                           <div>
                             <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
                               <span>{o.name}</span>
@@ -459,14 +612,18 @@
                               </div>
                               <div className="font-black text-red-600 text-sm">NT$ {o.totalAmount}</div>
                             </div>
-                            <button onClick={() => handleDelete(o.id)} className="text-slate-300 hover:text-red-500">
+                            <button
+                              onClick={() => setDeleteModalTarget(o)}
+                              className="text-slate-300 hover:text-red-500 p-1"
+                              title="刪除此筆"
+                            >
                               <Trash2Icon className="w-4 h-4" />
                             </button>
                           </div>
                         </div>
-                      ))
-                    )}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
