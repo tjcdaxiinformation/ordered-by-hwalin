@@ -112,7 +112,7 @@
           makauyQty: Number(makauyQty),
           totalAmount: currentTotalAmount,
           timestamp: formattedDate,
-          notes: '到貨教會取件'
+          notes: '到貨教會付款取件'
         };
 
         setOrders([newOrder, ...orders]);
@@ -145,7 +145,7 @@
           `💰 募款總金額：NT$ ${grandTotalAmount.toLocaleString()} 元\n` +
           `👥 總登記人數：${orders.length} 人\n` +
           `----------------------------\n` +
-          `🚚 配送與取件：到貨教會取件\n` +
+          `🚚 配送與取件：到貨教會付款取件\n` +
           `⏰ 加購登記截止：7月31日止\n` +
           `感謝各位弟兄姊妹的同心響應！願神紀念大家的愛心 ❤️`;
 
@@ -380,7 +380,7 @@
                       <input
                         type="text"
                         required
-                        placeholder="請輸入姓名（例：陳弟兄）"
+                        placeholder="請輸入姓名（例如：王鴻志）"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         className="w-full px-3 py-2 bg-slate-50 border rounded-xl text-sm outline-none focus:bg-white"
@@ -389,7 +389,7 @@
 
                     {/* 統一取件說明標示 */}
                     <div className="bg-stone-100 border border-stone-300 text-stone-700 rounded-xl p-2.5 text-center text-xs font-bold">
-                      🚚 取件方式：到貨教會取件
+                      🚚 取件方式：到貨教會付款取件
                     </div>
 
                     {/* 當前小計 */}
